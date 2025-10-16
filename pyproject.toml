@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wallet-features"
+version = "0.1.0"
+description = "CLI tool for extracting Ethereum wallet transaction features via Alchemy"
+readme = "README.md"
+authors = [{name = "Auto Generated"}]
+license = {text = "MIT"}
+requires-python = ">=3.9"
+dependencies = [
+    "aiohttp>=3.9",
+    "async-timeout>=4.0",
+    "python-dateutil>=2.8",
+    "pytz",
+    "typer>=0.9",
+    "rich>=13.0",
+]
+
+[project.scripts]
+wallet-features = "wallet_features.cli:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+addopts = "-ra"
