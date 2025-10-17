@@ -33,6 +33,18 @@ from wallet_features.utils import (
     load_wallets,
 )
 
+
+def _get_current_context() -> "typer.Context":
+    """Return the active Typer/Click context with backwards compatibility."""
+
+    get_context = getattr(typer, "get_current_context", None)
+    if callable(get_context):
+        return get_context()
+    from click import get_current_context as click_get_current_context  # type: ignore
+
+    return click_get_current_context()
+
+
 app = typer.Typer(help="Extract Ethereum wallet features using Alchemy")
 
 DEFAULT_INCLUDE_GAS_FEES = True
@@ -235,7 +247,7 @@ def main(
 ) -> None:
     configure_logging(verbose)
     load_env_file()
-    ctx = typer.get_current_context()
+    ctx = _get_current_context()
     get_source = getattr(ctx, "get_parameter_source", None)
     source = get_source("include_gas_fees") if callable(get_source) else None
     is_default_source = False
