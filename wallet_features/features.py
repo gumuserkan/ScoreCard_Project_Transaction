@@ -169,7 +169,7 @@ class FeatureCalculator:
 
         async def event_usd(ev: TransferEvent) -> float:
             if ev.unique_id not in usd_cache:
-                value = await self._event_usd_value(ev)
+                value = await self._event_usd_value(wallet, ev)
                 usd_cache[ev.unique_id] = float(value or 0.0)
             return usd_cache[ev.unique_id]
 
@@ -236,7 +236,9 @@ class FeatureCalculator:
         merged.sort(key=lambda ev: ev.timestamp, reverse=True)
         return merged
 
-    async def _event_usd_value(self, event: TransferEvent) -> Optional[float]:
+    async def _event_usd_value(
+        self, wallet: str, event: TransferEvent
+    ) -> Optional[float]:
         if event.value is not None:
             amount = event.value
         else:
@@ -247,6 +249,7 @@ class FeatureCalculator:
             contract_address=event.contract_address,
             network=self.network,
             timestamp=event.timestamp,
+            wallet=wallet,
         )
         if not price:
             return None
