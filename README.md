@@ -7,7 +7,7 @@ An asynchronous, production-ready CLI for extracting Ethereum wallet transaction
 - Supports CSV/text/Excel input files or direct `--wallets` comma-separated lists
 - ENS resolution, wallet validation, and graceful handling of invalid inputs
 - Concurrent asynchronous calls using `aiohttp` with retry/backoff
-- Aggregated transaction counts, volumes, gas fees, token categories, and transaction type inference
+- Aggregated transaction counts, volumes, token categories, and transaction type inference
 - Historical USD pricing via CoinMarketCap with caching and ETH fallback
 - Structured logging with optional verbose output
 - Unit tests for computation logic via `pytest`
@@ -64,20 +64,21 @@ pip install -e .
    - `--input` parametresini sağlamazsanız ve proje kökünde `data/wallets.xlsx` mevcutsa otomatik olarak kullanılır.
    - `--wallets` ile virgülle ayrılmış adresler verebilirsiniz: `wallet-features --wallets addr1,addr2`.
    - Alchemy anahtarınızı CLI üzerinden `--alchemy-key` ile geçebilir veya `.env`/ortam değişkeni kullanabilirsiniz.
-  - `--transactions-output` parametresi her cüzdana ait ayrıntılı transfer listesini Excel olarak üretir; verilmezse bu çıktı oluşturulmaz.
+   - `--transactions-output` parametresi her cüzdana ait ayrıntılı transfer listesini Excel olarak üretir; verilmezse bu çıktı oluşturulmaz.
    - `--verbose` bayrağı ayrıntılı log üretir.
 
 4. Çalışma tamamlandığında CLI çıktısı:
 
    - Özet metrikler CSV olarak `--output` ile verdiğiniz konuma yazılır (varsayılan `wallet_features.csv`).
-- Her cüzdanın son 250 transferine ait detaylar yalnızca `--transactions-output` parametresi sağlanırsa Excel dosyasına yazılır.
+   - Her cüzdanın son 250 transferine ait detaylar yalnızca `--transactions-output` parametresi sağlanırsa Excel dosyasına yazılır.
    - Başarısız olan cüzdanlar için hata mesajı `error` sütununda yer alır.
+   - USD bazlı hacim sütunlarını doldurmak için `ENABLE_PRICE_SERVICE` ortam değişkenini etkinleştirmeniz gerekir; aksi halde değerler sıfır kalır.
 
 ### Sample CSV Output
 
 ```
-Wallet,Total Tx Count (1M),Total Tx Count (3M),Total Tx Count (6M),Total Tx Count (12M),Monthly Tx Count Avg (12M),Total Tx Volume (1M),Total Tx Volume (3M),Total Tx Volume (6M),Total Tx Volume (12M),Monthly Tx Volume Avg (12M),Last Transaction Date,Time Between Last 2 Transactions (hours),Token Categories (Last 250 Tx),Tx Types (Last 250 Tx),Total Gas Fee (USD),error
-0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae,4,12,22,40,3.3333,15234.12,45012.85,80021.44,145000.75,12083.3958,2024-05-18T12:54:10+00:00,2.50,EXTERNAL,TRANSFER,125.67,
+Wallet,Total Tx Count (1M),Total Tx Count (3M),Total Tx Count (6M),Total Tx Count (12M),Monthly Tx Count Avg (12M),Total Tx Volume (1M),Total Tx Volume (3M),Total Tx Volume (6M),Total Tx Volume (12M),Monthly Tx Volume Avg (12M),Last Transaction Date,Time Between Last 2 Transactions (hours),Token Categories (Last 250 Tx),Tx Types (Last 250 Tx),error
+0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae,4,12,22,40,3.3333,15234.12,45012.85,80021.44,145000.75,12083.3958,2024-05-18T12:54:10+00:00,2.50,EXTERNAL,TRANSFER,
 ```
 
 (The above row is illustrative.)
@@ -105,12 +106,12 @@ pytest
 ## Environment Variables
 
 - `ALCHEMY_API_KEY`: API key used for Alchemy requests (required unless `--alchemy-key` is provided).
-- `COINMARKETCAP_API_KEY`: API key used for CoinMarketCap price lookups.
-- `INCLUDE_GAS_FEES`: Set to `false`/`0`/`no` to skip calculating gas fees; when disabled the `Total Gas Fee (USD)` column is left blank.
+- `COINMARKETCAP_API_KEY`: API key used for CoinMarketCap price lookups when the price service is enabled.
+- `ENABLE_PRICE_SERVICE`: Set to `true`/`1`/`yes` to opt-in to CoinMarketCap price queries. By default price lookups are disabled to avoid external requests.
 
 ## Development Notes
 
 - Retries implement exponential backoff with jitter for HTTP 429/5xx responses.
-- Token metadata and price lookups are cached in-memory per process to reduce redundant requests.
-- When price data for a token is unavailable, the tool falls back to the ETH/USD price at the transaction timestamp.
+- Token metadata queries are cached in-memory per process to reduce redundant requests.
+- Price lookups are disabled by default; set `ENABLE_PRICE_SERVICE` if you need USD conversions. When enabled, responses are cached and ETH price is used as a fallback if token-specific data is unavailable.
 - The output always includes an `error` column; if an address fails to process, the error message is recorded there.

@@ -8,11 +8,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 import typer
-
-try:  # pragma: no cover - fallback for older Click versions
-    from click import ParameterSource  # type: ignore
-except ImportError:  # pragma: no cover - Click<8.0 compatibility
-    ParameterSource = None  # type: ignore[misc,assignment]
 from rich.console import Console
 from rich.logging import RichHandler
 
@@ -25,29 +20,11 @@ from wallet_features.features import (
     compute_wallets_features,
 )
 from wallet_features.pricing import PriceService
-from wallet_features.utils import (
-    getenv,
-    getenv_bool,
-    is_wallet_address,
-    load_env_file,
-    load_wallets,
-)
-
-
-def _get_current_context() -> "typer.Context":
-    """Return the active Typer/Click context with backwards compatibility."""
-
-    get_context = getattr(typer, "get_current_context", None)
-    if callable(get_context):
-        return get_context()
-    from click import get_current_context as click_get_current_context  # type: ignore
-
-    return click_get_current_context()
+from wallet_features.utils import getenv, is_wallet_address, load_env_file, load_wallets
 
 
 app = typer.Typer(help="Extract Ethereum wallet features using Alchemy")
 
-DEFAULT_INCLUDE_GAS_FEES = True
 console = Console()
 
 HEADER = [
@@ -66,7 +43,6 @@ HEADER = [
     "Time Between Last 2 Transactions (hours)",
     "Token Categories (Last 250 Tx)",
     "Tx Types (Last 250 Tx)",
-    "Total Gas Fee (USD)",
     "error",
 ]
 
@@ -181,7 +157,6 @@ async def async_main(
     network: str,
     concurrency: int,
     timeout: int,
-    include_gas_fees: bool,
 ) -> None:
     wallets_raw = load_wallets(input_file, wallets_list)
     if not wallets_raw:
@@ -197,7 +172,6 @@ async def async_main(
                 client,
                 prices,
                 network=network,
-                include_gas_fees=include_gas_fees,
             )
             results = await compute_wallets_features(
                 resolved_wallets,
@@ -239,26 +213,9 @@ def main(
     concurrency: int = typer.Option(10, "--concurrency", min=1, help="Concurrent API calls"),
     timeout: int = typer.Option(30, "--timeout", help="HTTP timeout seconds"),
     verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging"),
-    include_gas_fees: bool = typer.Option(
-        DEFAULT_INCLUDE_GAS_FEES,
-        "--include-gas-fees/--skip-gas-fees",
-        help="Enable or disable gas fee calculation",
-    ),
 ) -> None:
     configure_logging(verbose)
     load_env_file()
-    ctx = _get_current_context()
-    get_source = getattr(ctx, "get_parameter_source", None)
-    source = get_source("include_gas_fees") if callable(get_source) else None
-    is_default_source = False
-    if ParameterSource is not None:
-        is_default_source = source == ParameterSource.DEFAULT
-    elif isinstance(source, str):  # pragma: no cover - Click<8 compatibility
-        is_default_source = source.lower() == "default"
-    elif source is None:
-        is_default_source = include_gas_fees == DEFAULT_INCLUDE_GAS_FEES
-    if is_default_source:
-        include_gas_fees = getenv_bool("INCLUDE_GAS_FEES", DEFAULT_INCLUDE_GAS_FEES)
     key = alchemy_key or getenv("ALCHEMY_API_KEY")
     if not key:
         raise typer.BadParameter("Alchemy API key must be provided via --alchemy-key or ALCHEMY_API_KEY env var")
@@ -278,7 +235,6 @@ def main(
                 network=network,
                 concurrency=concurrency,
                 timeout=timeout,
-                include_gas_fees=include_gas_fees,
             )
         )
     except KeyboardInterrupt:  # pragma: no cover - manual interrupt

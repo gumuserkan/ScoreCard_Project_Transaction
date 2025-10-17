@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
 
-from wallet_features.utils import async_retry, getenv
+from wallet_features.utils import async_retry, getenv, getenv_bool
 
 LOGGER = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ class PriceService:
         session: Optional[aiohttp.ClientSession] = None,
         timeout: int = 30,
         api_key: Optional[str] = None,
+        enabled: Optional[bool] = None,
     ):
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self._session = session
@@ -42,6 +43,11 @@ class PriceService:
         self.api_key = api_key or getenv(COINMARKETCAP_API_ENV)
         self._missing_key_logged = False
         self._contract_id_cache: Dict[str, Optional[int]] = {}
+        if enabled is None:
+            self.enabled = getenv_bool("ENABLE_PRICE_SERVICE", False)
+        else:
+            self.enabled = enabled
+        self._disabled_logged = False
 
     async def __aenter__(self) -> "PriceService":
         if self._session is None:
@@ -94,6 +100,11 @@ class PriceService:
 
     @async_retry()
     async def _request(self, url: str, params: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        if not self.enabled:
+            if not self._disabled_logged:
+                LOGGER.info("CoinMarketCap queries disabled; skipping price request to %s", url)
+                self._disabled_logged = True
+            return {}
         if not self.api_key:
             if not self._missing_key_logged:
                 LOGGER.warning(

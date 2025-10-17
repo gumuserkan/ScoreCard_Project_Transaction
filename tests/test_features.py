@@ -98,11 +98,7 @@ def test_compute_wallet_features(monkeypatch):
     async def fake_fetch(wallet):
         return [event_recent, event_old], [event_recent, event_old]
 
-    async def fake_receipt(tx_hash):
-        return {"gasUsed": hex(21000), "effectiveGasPrice": hex(100_000_000_000)}
-
     monkeypatch.setattr(calculator, "fetch_wallet_data", fake_fetch)
-    monkeypatch.setattr(calculator, "get_transaction_receipt", fake_receipt)
 
     features = asyncio.run(calculator.compute_wallet_features("0xwallet"))
     assert features["Total Tx Count (1M)"] == 1
@@ -110,41 +106,6 @@ def test_compute_wallet_features(monkeypatch):
     assert features["Total Tx Volume (1M)"] == pytest.approx(1000.0)
     assert features["Total Tx Volume (3M)"] == pytest.approx(2000.0)
     assert features["Monthly Tx Count Avg (12M)"] == pytest.approx(2 / 12, rel=1e-3)
-    assert features["Total Gas Fee (USD)"] == pytest.approx(2.1, rel=1e-3)
     assert "TRANSFER" in features["Tx Types (Last 250 Tx)"]
     cached_events = calculator.get_wallet_transactions("0xwallet")
     assert [event.tx_hash for event in cached_events] == ["0xabc", "0xdef"]
-
-
-def test_compute_wallet_features_without_gas_fees(monkeypatch):
-    now = datetime.now(timezone.utc)
-    client = DummyClient()
-    prices = DummyPriceService()
-    calculator = FeatureCalculator(client, prices, include_gas_fees=False)
-
-    event_recent = TransferEvent(
-        tx_hash="0xabc",
-        unique_id="0xabc-1",
-        timestamp=now,
-        category="external",
-        asset="ETH",
-        raw_value=None,
-        value=1.0,
-        raw_contract={},
-        from_address="0xwallet",
-        to_address="0xother",
-        direction="out",
-        raw={},
-    )
-
-    async def fake_fetch(wallet):
-        return [event_recent], [event_recent]
-
-    async def fail_receipt(tx_hash):  # pragma: no cover - defensive
-        raise AssertionError("Gas fee calculation should be skipped")
-
-    monkeypatch.setattr(calculator, "fetch_wallet_data", fake_fetch)
-    monkeypatch.setattr(calculator, "get_transaction_receipt", fail_receipt)
-
-    features = asyncio.run(calculator.compute_wallet_features("0xwallet"))
-    assert features["Total Gas Fee (USD)"] == ""
