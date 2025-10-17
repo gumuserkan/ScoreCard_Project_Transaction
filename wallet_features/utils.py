@@ -256,3 +256,17 @@ def getenv(key: str, default: Optional[str] = None) -> Optional[str]:
     """Wrapper around os.getenv for easier mocking."""
 
     return os.getenv(key, default)
+
+
+def getenv_bool(key: str, default: bool) -> bool:
+    """Return a boolean interpretation of an environment variable."""
+
+    value = getenv(key)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default

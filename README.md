@@ -106,6 +106,7 @@ pytest
 
 - `ALCHEMY_API_KEY`: API key used for Alchemy requests (required unless `--alchemy-key` is provided).
 - `COINMARKETCAP_API_KEY`: API key used for CoinMarketCap price lookups.
+- `INCLUDE_GAS_FEES`: Set to `false`/`0`/`no` to skip calculating gas fees; when disabled the `Total Gas Fee (USD)` column is left blank.
 
 ## Development Notes
 
