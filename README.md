@@ -51,6 +51,17 @@ pip install -e .
      --concurrency 8
    ```
 
+   Eğer paketi `pip install -e .` ile kurmadıysanız veya doğrudan kaynak koddan çalıştırmak istiyorsanız aynı komutu `python -m` ile çağırabilirsiniz:
+
+   ```bash
+   python -m wallet_features.cli \
+     --input data/wallets.xlsx \
+     --output out/wallet_features.csv \
+     --transactions-output out/wallet_transactions.xlsx \
+     --network eth-mainnet \
+     --concurrency 8
+   ```
+
    - `--input` parametresini sağlamazsanız ve proje kökünde `data/wallets.xlsx` mevcutsa otomatik olarak kullanılır.
    - `--wallets` ile virgülle ayrılmış adresler verebilirsiniz: `wallet-features --wallets addr1,addr2`.
    - Alchemy anahtarınızı CLI üzerinden `--alchemy-key` ile geçebilir veya `.env`/ortam değişkeni kullanabilirsiniz.
