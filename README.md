@@ -12,7 +12,7 @@ An asynchronous, production-ready CLI for extracting Ethereum wallet transaction
 - Structured logging with optional verbose output
 - Unit tests for computation logic via `pytest`
 
-## Installation
+## Kurulum
 
 ```bash
 python -m venv .venv
@@ -20,45 +20,48 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-## Usage
+## Hızlı Başlangıç
 
-### Configuration
-
-1. Copy `.env.example` to `.env` and add your secrets:
+1. `.env` dosyanızı hazırlayın:
 
    ```bash
    cp .env.example .env
    echo "ALCHEMY_API_KEY=your_key_here" >> .env
    ```
 
-   The CLI automatically loads the `.env` file on startup. Environment variables that are already set in the shell are not overridden.
+   CLI açılışta `.env` dosyasını otomatik olarak yükler. Kabuk ortamında zaten tanımlı değişkenler ezilmez.
 
-2. Create a `data/wallets.xlsx` file that contains the wallet addresses you want to process. The first row must include a column named `address`, and each subsequent row should include a wallet address beneath that header. Example:
+2. İşlenecek cüzdan adreslerini hazırlayın. En yaygın senaryoda `data/wallets.xlsx` içinde `address` başlıklı bir sütun oluşturup adresleri altına yazabilirsiniz:
 
    | address                        |
    | ----------------------------- |
    | 0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae |
    | vitalik.eth                    |
 
-3. (Optional) You can still provide CSV or newline-delimited text files if you prefer, or pass addresses directly with `--wallets`.
+   Alternatif olarak CSV (`.csv`), düz metin (`.txt`) dosyaları kullanabilir veya adresleri doğrudan `--wallets` parametresiyle girebilirsiniz.
 
-### Usage
+3. Uygulamayı başlatın:
 
-Set your Alchemy API key in the environment or `.env` file, or pass it via CLI.
+   ```bash
+   wallet-features \
+     --input data/wallets.xlsx \
+     --output out/wallet_features.csv \
+     --transactions-output out/wallet_transactions.xlsx \
+     --network eth-mainnet \
+     --concurrency 8
+   ```
 
-```bash
-wallet-features --input data/wallets.xlsx --output features.csv --network eth-mainnet --concurrency 8
-```
+   - `--input` parametresini sağlamazsanız ve proje kökünde `data/wallets.xlsx` mevcutsa otomatik olarak kullanılır.
+   - `--wallets` ile virgülle ayrılmış adresler verebilirsiniz: `wallet-features --wallets addr1,addr2`.
+   - Alchemy anahtarınızı CLI üzerinden `--alchemy-key` ile geçebilir veya `.env`/ortam değişkeni kullanabilirsiniz.
+   - `--transactions-output` parametresi her cüzdana ait ayrıntılı transfer listesini Excel olarak üretir (varsayılan `out/wallet_transactions.xlsx`).
+   - `--verbose` bayrağı ayrıntılı log üretir.
 
-If you omit `--input` and a `data/wallets.xlsx` file exists, it will be used automatically.
+4. Çalışma tamamlandığında CLI çıktısı:
 
-Or pass wallets directly:
-
-```bash
-wallet-features --wallets 0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae,0xddbd1b7b8d1d6f7a5b7d6400bfb9ffbff7c8db8f --output features.csv
-```
-
-Use `--verbose` for debug-level logs.
+   - Özet metrikler CSV olarak `--output` ile verdiğiniz konuma yazılır (varsayılan `wallet_features.csv`).
+   - Her cüzdanın son 250 transferine ait detaylar Excel dosyasına (`--transactions-output`).
+   - Başarısız olan cüzdanlar için hata mesajı `error` sütununda yer alır.
 
 ### Sample CSV Output
 
