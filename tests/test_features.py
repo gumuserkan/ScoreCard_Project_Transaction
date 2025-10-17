@@ -112,3 +112,5 @@ def test_compute_wallet_features(monkeypatch):
     assert features["Monthly Tx Count Avg (12M)"] == pytest.approx(2 / 12, rel=1e-3)
     assert features["Total Gas Fee (USD)"] == pytest.approx(2.1, rel=1e-3)
     assert "TRANSFER" in features["Tx Types (Last 250 Tx)"]
+    cached_events = calculator.get_wallet_transactions("0xwallet")
+    assert [event.tx_hash for event in cached_events] == ["0xabc", "0xdef"]

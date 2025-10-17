@@ -66,6 +66,7 @@ class FeatureCalculator:
         self.network = network
         self._metadata_cache: Dict[str, Dict[str, Any]] = {}
         self._receipt_cache: Dict[str, Dict[str, Any]] = {}
+        self._transactions_cache: Dict[str, List[TransferEvent]] = {}
 
     async def get_token_metadata(self, contract_address: str) -> Optional[Dict[str, Any]]:
         if contract_address in self._metadata_cache:
@@ -143,6 +144,8 @@ class FeatureCalculator:
 
     async def compute_wallet_features(self, wallet: str) -> Dict[str, Any]:
         events_year, events_250 = await self.fetch_wallet_data(wallet)
+        combined_events = self._combine_events(events_year, events_250)
+        self._transactions_cache[wallet] = combined_events
         if not events_year and not events_250:
             return self._empty_features(wallet)
         events_year.sort(key=lambda e: e.timestamp, reverse=True)
@@ -209,6 +212,26 @@ class FeatureCalculator:
                 volumes[f"Total Tx Volume ({window.label})"], 2
             )
         return features
+
+    def get_wallet_transactions(self, wallet: str) -> List[TransferEvent]:
+        """Return cached transactions for a wallet computed during feature extraction."""
+
+        return list(self._transactions_cache.get(wallet, []))
+
+    def _combine_events(
+        self,
+        events_year: List[TransferEvent],
+        events_recent: List[TransferEvent],
+    ) -> List[TransferEvent]:
+        """Merge yearly and recent transfer events into a de-duplicated list."""
+
+        seen: Dict[str, TransferEvent] = {}
+        for event in events_year + events_recent:
+            key = event.unique_id or f"{event.tx_hash}:{event.timestamp.isoformat()}"
+            seen[key] = event
+        merged = list(seen.values())
+        merged.sort(key=lambda ev: ev.timestamp, reverse=True)
+        return merged
 
     async def _event_usd_value(self, event: TransferEvent) -> Optional[float]:
         if event.value is not None:
