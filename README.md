@@ -72,7 +72,7 @@ pip install -e .
    - Özet metrikler CSV olarak `--output` ile verdiğiniz konuma yazılır (varsayılan `wallet_features.csv`).
    - Her cüzdanın son 250 transferine ait detaylar yalnızca `--transactions-output` parametresi sağlanırsa Excel dosyasına yazılır.
    - Başarısız olan cüzdanlar için hata mesajı `error` sütununda yer alır.
-   - USD bazlı hacim sütunlarını doldurmak için `ENABLE_PRICE_SERVICE` ortam değişkenini etkinleştirmeniz gerekir; aksi halde değerler sıfır kalır.
+   - CoinMarketCap API anahtarınız `.env` veya ortam değişkeniyle sağlandığında USD bazlı hacim sütunları otomatik olarak doldurulur. Servisi kapatmak için `ENABLE_PRICE_SERVICE` ortam değişkenini `false` olarak ayarlayabilirsiniz.
 
 ### Sample CSV Output
 
@@ -107,11 +107,11 @@ pytest
 
 - `ALCHEMY_API_KEY`: API key used for Alchemy requests (required unless `--alchemy-key` is provided).
 - `COINMARKETCAP_API_KEY`: API key used for CoinMarketCap price lookups when the price service is enabled.
-- `ENABLE_PRICE_SERVICE`: Set to `true`/`1`/`yes` to opt-in to CoinMarketCap price queries. By default price lookups are disabled to avoid external requests.
+- `ENABLE_PRICE_SERVICE`: Set to `true`/`1`/`yes` to force-enable or `false`/`0` to disable CoinMarketCap price queries. Eğer değişken tanımlanmazsa ve bir CoinMarketCap API anahtarı mevcutsa servis otomatik olarak devreye girer.
 
 ## Development Notes
 
 - Retries implement exponential backoff with jitter for HTTP 429/5xx responses.
 - Token metadata queries are cached in-memory per process to reduce redundant requests.
-- Price lookups are disabled by default; set `ENABLE_PRICE_SERVICE` if you need USD conversions. When enabled, responses are cached and ETH price is used as a fallback if token-specific data is unavailable.
+- Price lookups CoinMarketCap API anahtarınız bulunduğunda otomatik olarak etkinleşir; ihtiyaç halinde `ENABLE_PRICE_SERVICE` değeriyle davranışı kontrol edebilirsiniz. Etkin olduğunda yanıtlar önbelleğe alınır ve token özelinde veri bulunamazsa ETH fiyatı yedek olarak kullanılır.
 - The output always includes an `error` column; if an address fails to process, the error message is recorded there.

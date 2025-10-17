@@ -44,7 +44,11 @@ class PriceService:
         self._missing_key_logged = False
         self._contract_id_cache: Dict[str, Optional[int]] = {}
         if enabled is None:
-            self.enabled = getenv_bool("ENABLE_PRICE_SERVICE", False)
+            env_flag = getenv("ENABLE_PRICE_SERVICE")
+            if env_flag is not None:
+                self.enabled = getenv_bool("ENABLE_PRICE_SERVICE", False)
+            else:
+                self.enabled = bool(self.api_key)
         else:
             self.enabled = enabled
         self._disabled_logged = False
