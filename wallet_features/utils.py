@@ -86,11 +86,35 @@ def load_wallets(
                         header = [str(cell).strip().lower() if cell is not None else "" for cell in row]
                         try:
                             address_idx = header.index("address")
-                        except ValueError as exc:
-                            raise ValueError(
-                                f"Excel file {input_path} must contain an 'address' column"
-                            ) from exc
-                        continue
+                            continue
+                        except ValueError:
+                            # If the first row doesn't look like a header, treat it as data.
+                            first_non_empty: Optional[int] = None
+                            valid_found = False
+                            has_values = False
+                            for idx, cell in enumerate(row):
+                                if cell is None:
+                                    continue
+                                text = str(cell).strip()
+                                if not text:
+                                    continue
+                                has_values = True
+                                if first_non_empty is None:
+                                    first_non_empty = idx
+                                normalized = normalize_wallet(text)
+                                if is_wallet_address(normalized) or normalized.endswith(".eth"):
+                                    wallets.add(normalized)
+                                    valid_found = True
+                            if not has_values:
+                                header = None
+                                continue
+                            if not valid_found:
+                                raise ValueError(
+                                    f"Excel file {input_path} must contain an 'address' column"
+                                )
+                            address_idx = first_non_empty if first_non_empty is not None else 0
+                            # first row already processed as data
+                            continue
                     if address_idx is None or address_idx >= len(row):
                         continue
                     cell = row[address_idx]
