@@ -65,13 +65,10 @@ class FeatureCalculator:
         client: AlchemyClient,
         prices: PriceService,
         network: str = "eth-mainnet",
-        *,
-        include_gas_fees: bool = True,
     ):
         self.client = client
         self.prices = prices
         self.network = network
-        self.include_gas_fees = include_gas_fees
         self._metadata_cache: Dict[str, Dict[str, Any]] = {}
         self._receipt_cache: Dict[str, Dict[str, Any]] = {}
         self._transactions_cache: Dict[str, List[TransferEvent]] = {}
@@ -202,12 +199,6 @@ class FeatureCalculator:
         types_year = self._classify_transactions(wallet, tx_events)
         types_recent = self._classify_events(events_250, wallet)
         tx_types = sorted(types_year.union(types_recent))
-        gas_fee_usd = 0.0
-        if self.include_gas_fees:
-            gas_fee_usd = await self._total_gas_fee(wallet, tx_events, reference)
-        gas_fee_value: object = ""
-        if self.include_gas_fees:
-            gas_fee_value = round(gas_fee_usd, 2)
         features = {
             "Wallet": wallet,
             "Monthly Tx Count Avg (12M)": round(monthly_count_avg, 4),
@@ -216,7 +207,6 @@ class FeatureCalculator:
             "Time Between Last 2 Transactions (hours)": time_between_hours,
             "Token Categories (Last 250 Tx)": ",".join(categories),
             "Tx Types (Last 250 Tx)": ",".join(sorted(tx_types)),
-            "Total Gas Fee (USD)": gas_fee_value,
             "error": "",
         }
         for window in WINDOWS:
@@ -323,50 +313,7 @@ class FeatureCalculator:
             return "CONTRACT_INTERACTION"
         return "UNKNOWN"
 
-    async def _total_gas_fee(
-        self,
-        wallet: str,
-        tx_events: Dict[str, List[TransferEvent]],
-        reference: datetime,
-    ) -> float:
-        total_usd = 0.0
-        wallet_lower = wallet.lower()
-        for tx_hash, events in tx_events.items():
-            # Gas is paid by sender
-            sender = None
-            timestamp = None
-            for ev in events:
-                if ev.from_address:
-                    sender = ev.from_address
-                if not timestamp or ev.timestamp > timestamp:
-                    timestamp = ev.timestamp
-            if sender != wallet_lower or not tx_hash:
-                continue
-            receipt = await self.get_transaction_receipt(tx_hash)
-            if not receipt:
-                continue
-            gas_used_hex = receipt.get("gasUsed")
-            eff_price_hex = receipt.get("effectiveGasPrice") or receipt.get("gasPrice")
-            if not gas_used_hex or not eff_price_hex:
-                continue
-            try:
-                gas_used = int(gas_used_hex, 16)
-                effective_price = int(eff_price_hex, 16)
-            except ValueError:
-                continue
-            eth_spent = gas_used * effective_price / 1e18
-            if timestamp is None:
-                timestamp = reference
-            price = await self.prices.get_price(contract_address=None, network=self.network, timestamp=timestamp)
-            if not price:
-                continue
-            total_usd += eth_spent * price.usd
-        return total_usd
-
     def _empty_features(self, wallet: str) -> Dict[str, Any]:
-        gas_fee_value: object = ""
-        if self.include_gas_fees:
-            gas_fee_value = 0.0
         base = {
             "Wallet": wallet,
             "Monthly Tx Count Avg (12M)": 0.0,
@@ -375,7 +322,6 @@ class FeatureCalculator:
             "Time Between Last 2 Transactions (hours)": "",
             "Token Categories (Last 250 Tx)": "",
             "Tx Types (Last 250 Tx)": "",
-            "Total Gas Fee (USD)": gas_fee_value,
             "error": "",
         }
         for window in WINDOWS:
