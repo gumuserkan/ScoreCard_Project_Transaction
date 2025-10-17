@@ -8,7 +8,7 @@ An asynchronous, production-ready CLI for extracting Ethereum wallet transaction
 - ENS resolution, wallet validation, and graceful handling of invalid inputs
 - Concurrent asynchronous calls using `aiohttp` with retry/backoff
 - Aggregated transaction counts, volumes, gas fees, token categories, and transaction type inference
-- Historical USD pricing via CoinGecko with caching and ETH fallback
+- Historical USD pricing via CoinMarketCap with caching and ETH fallback
 - Structured logging with optional verbose output
 - Unit tests for computation logic via `pytest`
 
@@ -27,6 +27,7 @@ pip install -e .
    ```bash
    cp .env.example .env
    echo "ALCHEMY_API_KEY=your_key_here" >> .env
+   echo "COINMARKETCAP_API_KEY=your_coinmarketcap_key" >> .env
    ```
 
    CLI açılışta `.env` dosyasını otomatik olarak yükler. Kabuk ortamında zaten tanımlı değişkenler ezilmez.
@@ -104,6 +105,7 @@ pytest
 ## Environment Variables
 
 - `ALCHEMY_API_KEY`: API key used for Alchemy requests (required unless `--alchemy-key` is provided).
+- `COINMARKETCAP_API_KEY`: API key used for CoinMarketCap price lookups.
 
 ## Development Notes
 
