@@ -147,4 +147,4 @@ def test_compute_wallet_features_without_gas_fees(monkeypatch):
     monkeypatch.setattr(calculator, "get_transaction_receipt", fail_receipt)
 
     features = asyncio.run(calculator.compute_wallet_features("0xwallet"))
-    assert features["Total Gas Fee (USD)"] == 0.0
+    assert features["Total Gas Fee (USD)"] == ""

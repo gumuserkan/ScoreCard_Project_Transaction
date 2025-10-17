@@ -6,7 +6,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from wallet_features.clients.alchemy import AlchemyClient, gather_wallet_transfers
 from wallet_features.pricing import PriceService
@@ -205,6 +205,9 @@ class FeatureCalculator:
         gas_fee_usd = 0.0
         if self.include_gas_fees:
             gas_fee_usd = await self._total_gas_fee(wallet, tx_events, reference)
+        gas_fee_value: object = ""
+        if self.include_gas_fees:
+            gas_fee_value = round(gas_fee_usd, 2)
         features = {
             "Wallet": wallet,
             "Monthly Tx Count Avg (12M)": round(monthly_count_avg, 4),
@@ -213,7 +216,7 @@ class FeatureCalculator:
             "Time Between Last 2 Transactions (hours)": time_between_hours,
             "Token Categories (Last 250 Tx)": ",".join(categories),
             "Tx Types (Last 250 Tx)": ",".join(sorted(tx_types)),
-            "Total Gas Fee (USD)": round(gas_fee_usd, 2),
+            "Total Gas Fee (USD)": gas_fee_value,
             "error": "",
         }
         for window in WINDOWS:
@@ -361,6 +364,9 @@ class FeatureCalculator:
         return total_usd
 
     def _empty_features(self, wallet: str) -> Dict[str, Any]:
+        gas_fee_value: object = ""
+        if self.include_gas_fees:
+            gas_fee_value = 0.0
         base = {
             "Wallet": wallet,
             "Monthly Tx Count Avg (12M)": 0.0,
@@ -369,7 +375,7 @@ class FeatureCalculator:
             "Time Between Last 2 Transactions (hours)": "",
             "Token Categories (Last 250 Tx)": "",
             "Tx Types (Last 250 Tx)": "",
-            "Total Gas Fee (USD)": 0.0,
+            "Total Gas Fee (USD)": gas_fee_value,
             "error": "",
         }
         for window in WINDOWS:

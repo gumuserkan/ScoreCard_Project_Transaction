@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 import typer
+from click import ParameterSource
 from rich.console import Console
 from rich.logging import RichHandler
 
@@ -20,7 +21,13 @@ from wallet_features.features import (
     compute_wallets_features,
 )
 from wallet_features.pricing import PriceService
-from wallet_features.utils import getenv, is_wallet_address, load_env_file, load_wallets
+from wallet_features.utils import (
+    getenv,
+    getenv_bool,
+    is_wallet_address,
+    load_env_file,
+    load_wallets,
+)
 
 app = typer.Typer(help="Extract Ethereum wallet features using Alchemy")
 console = Console()
@@ -222,6 +229,10 @@ def main(
 ) -> None:
     configure_logging(verbose)
     load_env_file()
+    ctx = typer.get_current_context()
+    source = ctx.get_parameter_source("include_gas_fees")
+    if source == ParameterSource.DEFAULT:
+        include_gas_fees = getenv_bool("INCLUDE_GAS_FEES", True)
     key = alchemy_key or getenv("ALCHEMY_API_KEY")
     if not key:
         raise typer.BadParameter("Alchemy API key must be provided via --alchemy-key or ALCHEMY_API_KEY env var")
