@@ -156,6 +156,7 @@ async def async_main(
     network: str,
     concurrency: int,
     timeout: int,
+    include_gas_fees: bool,
 ) -> None:
     wallets_raw = load_wallets(input_file, wallets_list)
     if not wallets_raw:
@@ -167,7 +168,12 @@ async def async_main(
             console.print("[red]No valid wallets to process.[/red]")
             return
         async with PriceService(timeout=timeout) as prices:
-            calculator = FeatureCalculator(client, prices, network=network)
+            calculator = FeatureCalculator(
+                client,
+                prices,
+                network=network,
+                include_gas_fees=include_gas_fees,
+            )
             results = await compute_wallets_features(
                 resolved_wallets,
                 calculator,
@@ -208,6 +214,11 @@ def main(
     concurrency: int = typer.Option(10, "--concurrency", min=1, help="Concurrent API calls"),
     timeout: int = typer.Option(30, "--timeout", help="HTTP timeout seconds"),
     verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging"),
+    include_gas_fees: bool = typer.Option(
+        True,
+        "--include-gas-fees/--skip-gas-fees",
+        help="Enable or disable gas fee calculation",
+    ),
 ) -> None:
     configure_logging(verbose)
     load_env_file()
@@ -230,6 +241,7 @@ def main(
                 network=network,
                 concurrency=concurrency,
                 timeout=timeout,
+                include_gas_fees=include_gas_fees,
             )
         )
     except KeyboardInterrupt:  # pragma: no cover - manual interrupt

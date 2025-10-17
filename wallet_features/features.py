@@ -60,10 +60,18 @@ class TransferEvent:
 class FeatureCalculator:
     """Coordinates fetching and computation of wallet features."""
 
-    def __init__(self, client: AlchemyClient, prices: PriceService, network: str = "eth-mainnet"):
+    def __init__(
+        self,
+        client: AlchemyClient,
+        prices: PriceService,
+        network: str = "eth-mainnet",
+        *,
+        include_gas_fees: bool = True,
+    ):
         self.client = client
         self.prices = prices
         self.network = network
+        self.include_gas_fees = include_gas_fees
         self._metadata_cache: Dict[str, Dict[str, Any]] = {}
         self._receipt_cache: Dict[str, Dict[str, Any]] = {}
         self._transactions_cache: Dict[str, List[TransferEvent]] = {}
@@ -194,7 +202,9 @@ class FeatureCalculator:
         types_year = self._classify_transactions(wallet, tx_events)
         types_recent = self._classify_events(events_250, wallet)
         tx_types = sorted(types_year.union(types_recent))
-        gas_fee_usd = await self._total_gas_fee(wallet, tx_events, reference)
+        gas_fee_usd = 0.0
+        if self.include_gas_fees:
+            gas_fee_usd = await self._total_gas_fee(wallet, tx_events, reference)
         features = {
             "Wallet": wallet,
             "Monthly Tx Count Avg (12M)": round(monthly_count_avg, 4),
