@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 import typer
-from click import ParameterSource
+
+try:  # pragma: no cover - fallback for older Click versions
+    from click import ParameterSource  # type: ignore
+except ImportError:  # pragma: no cover - Click<8.0 compatibility
+    ParameterSource = None  # type: ignore[misc,assignment]
 from rich.console import Console
 from rich.logging import RichHandler
 
@@ -30,6 +34,8 @@ from wallet_features.utils import (
 )
 
 app = typer.Typer(help="Extract Ethereum wallet features using Alchemy")
+
+DEFAULT_INCLUDE_GAS_FEES = True
 console = Console()
 
 HEADER = [
@@ -222,7 +228,7 @@ def main(
     timeout: int = typer.Option(30, "--timeout", help="HTTP timeout seconds"),
     verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging"),
     include_gas_fees: bool = typer.Option(
-        True,
+        DEFAULT_INCLUDE_GAS_FEES,
         "--include-gas-fees/--skip-gas-fees",
         help="Enable or disable gas fee calculation",
     ),
@@ -230,9 +236,17 @@ def main(
     configure_logging(verbose)
     load_env_file()
     ctx = typer.get_current_context()
-    source = ctx.get_parameter_source("include_gas_fees")
-    if source == ParameterSource.DEFAULT:
-        include_gas_fees = getenv_bool("INCLUDE_GAS_FEES", True)
+    get_source = getattr(ctx, "get_parameter_source", None)
+    source = get_source("include_gas_fees") if callable(get_source) else None
+    is_default_source = False
+    if ParameterSource is not None:
+        is_default_source = source == ParameterSource.DEFAULT
+    elif isinstance(source, str):  # pragma: no cover - Click<8 compatibility
+        is_default_source = source.lower() == "default"
+    elif source is None:
+        is_default_source = include_gas_fees == DEFAULT_INCLUDE_GAS_FEES
+    if is_default_source:
+        include_gas_fees = getenv_bool("INCLUDE_GAS_FEES", DEFAULT_INCLUDE_GAS_FEES)
     key = alchemy_key or getenv("ALCHEMY_API_KEY")
     if not key:
         raise typer.BadParameter("Alchemy API key must be provided via --alchemy-key or ALCHEMY_API_KEY env var")
