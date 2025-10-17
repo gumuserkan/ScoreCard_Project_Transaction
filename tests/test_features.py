@@ -34,7 +34,7 @@ class DummyClient:
 
 
 class DummyPriceService:
-    async def get_price(self, *, contract_address, network, timestamp):
+    async def get_price(self, *, contract_address, network, timestamp, wallet=None):
         return TokenPrice(usd=1000.0, timestamp=timestamp)
 
 

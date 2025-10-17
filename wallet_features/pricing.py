@@ -4,7 +4,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from itertools import cycle
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import aiohttp
 
@@ -14,8 +15,14 @@ LOGGER = logging.getLogger(__name__)
 
 COINMARKETCAP_BASE = "https://pro-api.coinmarketcap.com"
 COINMARKETCAP_API_ENV = "COINMARKETCAP_API_KEY"
+COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 USD = "USD"
 ETH_CMC_ID = 1027
+
+COINMARKETCAP_PROVIDER = "coinmarketcap"
+COINGECKO_PROVIDER = "coingecko"
+
+COINGECKO_NETWORK_IDS = {"eth-mainnet": "ethereum"}
 
 
 @dataclass
@@ -27,7 +34,7 @@ class TokenPrice:
 
 
 class PriceService:
-    """Service providing token and native prices."""
+    """Service providing token and native prices using multiple providers."""
 
     def __init__(
         self,
@@ -39,19 +46,27 @@ class PriceService:
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self._session = session
         self._session_owner = session is None
-        self._price_cache: Dict[str, TokenPrice] = {}
         self.api_key = api_key or getenv(COINMARKETCAP_API_ENV)
-        self._missing_key_logged = False
         self._contract_id_cache: Dict[str, Optional[int]] = {}
         if enabled is None:
             env_flag = getenv("ENABLE_PRICE_SERVICE")
             if env_flag is not None:
                 self.enabled = getenv_bool("ENABLE_PRICE_SERVICE", False)
             else:
-                self.enabled = bool(self.api_key)
+                self.enabled = True
         else:
             self.enabled = enabled
+        self._coinmarketcap_enabled = bool(self.api_key)
+        self._price_cache: Dict[str, TokenPrice] = {}
+        self._wallet_provider: Dict[str, str] = {}
         self._disabled_logged = False
+        self._coinmarketcap_disabled_logged = False
+        self._providers: List[str] = []
+        if self.enabled:
+            if self._coinmarketcap_enabled:
+                self._providers.append(COINMARKETCAP_PROVIDER)
+            self._providers.append(COINGECKO_PROVIDER)
+        self._provider_cycle = cycle(self._providers) if self._providers else None
 
     async def __aenter__(self) -> "PriceService":
         if self._session is None:
@@ -71,13 +86,32 @@ class PriceService:
             self._session = aiohttp.ClientSession(timeout=self.timeout)
         return self._session
 
-    def _cache_key(self, asset_id: str, date_key: str) -> str:
-        return f"{asset_id}:{date_key}"
+    def _cache_key(self, provider: str, asset_id: str, date_key: str) -> str:
+        return f"{provider}:{asset_id}:{date_key}"
 
     @staticmethod
     def _date_key(timestamp: datetime) -> str:
         dt = timestamp.astimezone(timezone.utc)
         return dt.strftime("%Y-%m-%d-%H")
+
+    def _select_next_provider(self) -> str:
+        if not self._providers:
+            raise RuntimeError("No price providers configured")
+        if not self._provider_cycle:
+            return self._providers[0]
+        return next(self._provider_cycle)
+
+    def _providers_to_try(self, wallet: Optional[str]) -> Iterable[str]:
+        if not self._providers:
+            return []
+        if wallet:
+            provider = self._wallet_provider.get(wallet)
+            if provider is None:
+                provider = self._select_next_provider()
+                self._wallet_provider[wallet] = provider
+            others = [name for name in self._providers if name != provider]
+            return [provider, *others]
+        return list(self._providers)
 
     async def get_price(
         self,
@@ -85,36 +119,238 @@ class PriceService:
         contract_address: Optional[str],
         network: str,
         timestamp: datetime,
+        wallet: Optional[str] = None,
     ) -> Optional[TokenPrice]:
+        if not self.enabled or not self._providers:
+            if not self._disabled_logged:
+                LOGGER.info("Price service disabled; skipping price lookups")
+                self._disabled_logged = True
+            return None
         date_key = self._date_key(timestamp)
         asset_id = contract_address.lower() if contract_address else "eth"
-        cache_key = self._cache_key(asset_id, date_key)
-        if cache_key in self._price_cache:
-            return self._price_cache[cache_key]
+        for provider in self._providers_to_try(wallet):
+            cache_key = self._cache_key(provider, asset_id, date_key)
+            cached = self._price_cache.get(cache_key)
+            if cached:
+                return cached
+            price = await self._fetch_with_provider(
+                provider, contract_address, network, timestamp
+            )
+            if price:
+                self._price_cache[cache_key] = price
+                return price
+        return None
+
+    async def _fetch_with_provider(
+        self,
+        provider: str,
+        contract_address: Optional[str],
+        network: str,
+        timestamp: datetime,
+    ) -> Optional[TokenPrice]:
+        try:
+            if provider == COINMARKETCAP_PROVIDER:
+                return await self._fetch_coinmarketcap_price(contract_address, timestamp)
+            if provider == COINGECKO_PROVIDER:
+                return await self._fetch_coingecko_price(contract_address, network, timestamp)
+        except Exception as exc:  # pragma: no cover - runtime protection
+            LOGGER.warning(
+                "Failed to fetch price using %s for %s: %s",
+                provider,
+                contract_address or "eth",
+                exc,
+            )
+        return None
+
+    async def _fetch_coinmarketcap_price(
+        self, contract_address: Optional[str], timestamp: datetime
+    ) -> Optional[TokenPrice]:
+        if not self._coinmarketcap_enabled:
+            if not self._coinmarketcap_disabled_logged:
+                if not self.api_key:
+                    LOGGER.warning(
+                        "CoinMarketCap API key not configured; provider will be skipped"
+                    )
+                else:
+                    LOGGER.info("CoinMarketCap provider disabled")
+                self._coinmarketcap_disabled_logged = True
+            return None
         if contract_address:
-            price = await self._fetch_contract_price(contract_address, timestamp)
-            if price is None:
-                LOGGER.debug("Falling back to native price for %s", contract_address)
-                price = await self._fetch_eth_price(timestamp)
-        else:
-            price = await self._fetch_eth_price(timestamp)
+            return await self._fetch_coinmarketcap_contract_price(contract_address, timestamp)
+        return await self._fetch_coinmarketcap_eth_price(timestamp)
+
+    async def _fetch_coinmarketcap_contract_price(
+        self, contract_address: str, timestamp: datetime
+    ) -> Optional[TokenPrice]:
+        token_id = await self._get_coinmarketcap_contract_token_id(contract_address)
+        if token_id is None:
+            return None
+        try:
+            return await self._fetch_coinmarketcap_price_for_id(token_id, timestamp)
+        except Exception as exc:  # pragma: no cover - runtime only
+            LOGGER.warning("Failed to fetch contract price %s: %s", contract_address, exc)
+            return None
+
+    async def _fetch_coinmarketcap_eth_price(
+        self, timestamp: datetime
+    ) -> Optional[TokenPrice]:
+        try:
+            return await self._fetch_coinmarketcap_price_for_id(ETH_CMC_ID, timestamp)
+        except Exception as exc:  # pragma: no cover - runtime only
+            LOGGER.warning("Failed to fetch ETH price: %s", exc)
+            return None
+
+    async def _fetch_coinmarketcap_price_for_id(
+        self, token_id: int, timestamp: datetime
+    ) -> Optional[TokenPrice]:
+        price = await self._fetch_coinmarketcap_historical_price(
+            {"id": str(token_id)}, timestamp
+        )
         if price:
-            self._price_cache[cache_key] = price
-        return price
+            return price
+        return await self._fetch_coinmarketcap_latest_price(
+            {"id": str(token_id)}, timestamp
+        )
+
+    async def _fetch_coinmarketcap_historical_price(
+        self, base_params: Dict[str, str], timestamp: datetime
+    ) -> Optional[TokenPrice]:
+        dt = timestamp.astimezone(timezone.utc)
+        params = {
+            **base_params,
+            "time_start": (dt - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S"),
+            "time_end": (dt + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S"),
+            "interval": "hourly",
+            "convert": USD,
+            "count": "1",
+        }
+        url = f"{COINMARKETCAP_BASE}/v2/cryptocurrency/quotes/historical"
+        data = await self._request_coinmarketcap(url, params=params)
+        if not data:
+            return None
+        return self._parse_historical_price(data, timestamp)
+
+    async def _fetch_coinmarketcap_latest_price(
+        self, base_params: Dict[str, str], fallback_timestamp: datetime
+    ) -> Optional[TokenPrice]:
+        params = {**base_params, "convert": USD}
+        url = f"{COINMARKETCAP_BASE}/v2/cryptocurrency/quotes/latest"
+        data = await self._request_coinmarketcap(url, params=params)
+        if not data:
+            return None
+        return self._parse_latest_price(data, fallback_timestamp)
+
+    async def _get_coinmarketcap_contract_token_id(
+        self, contract_address: str
+    ) -> Optional[int]:
+        normalized = contract_address.lower()
+        if normalized in self._contract_id_cache:
+            return self._contract_id_cache[normalized]
+        url = f"{COINMARKETCAP_BASE}/v2/cryptocurrency/info"
+        params = {"address": normalized}
+        try:
+            data = await self._request_coinmarketcap(url, params=params)
+        except Exception as exc:  # pragma: no cover - runtime only
+            LOGGER.warning("Failed to fetch metadata for %s: %s", contract_address, exc)
+            self._contract_id_cache[normalized] = None
+            return None
+        token_id = self._parse_contract_token_id(data, normalized)
+        self._contract_id_cache[normalized] = token_id
+        return token_id
+
+    async def _fetch_coingecko_price(
+        self,
+        contract_address: Optional[str],
+        network: str,
+        timestamp: datetime,
+    ) -> Optional[TokenPrice]:
+        platform = COINGECKO_NETWORK_IDS.get(network)
+        if not platform:
+            return None
+        if contract_address:
+            return await self._fetch_coingecko_contract_price(contract_address, platform, timestamp)
+        return await self._fetch_coingecko_eth_price(platform, timestamp)
+
+    async def _fetch_coingecko_contract_price(
+        self, contract_address: str, platform: str, timestamp: datetime
+    ) -> Optional[TokenPrice]:
+        price = await self._coingecko_market_chart(
+            f"coins/{platform}/contract/{contract_address.lower()}/market_chart/range",
+            timestamp,
+        )
+        if price:
+            return price
+        return await self._coingecko_simple_token_price(contract_address, platform, timestamp)
+
+    async def _fetch_coingecko_eth_price(
+        self, platform: str, timestamp: datetime
+    ) -> Optional[TokenPrice]:
+        price = await self._coingecko_market_chart(
+            f"coins/{platform}/market_chart/range",
+            timestamp,
+        )
+        if price:
+            return price
+        return await self._coingecko_simple_native_price(platform, timestamp)
+
+    async def _coingecko_market_chart(
+        self, path: str, timestamp: datetime
+    ) -> Optional[TokenPrice]:
+        dt = timestamp.astimezone(timezone.utc)
+        start = int((dt - timedelta(hours=2)).timestamp())
+        end = int((dt + timedelta(hours=2)).timestamp())
+        if end <= start:
+            end = start + 3600
+        params = {"vs_currency": "usd", "from": str(start), "to": str(end)}
+        url = f"{COINGECKO_BASE}/{path}"
+        data = await self._request_coingecko(url, params=params)
+        if not data:
+            return None
+        return self._parse_coingecko_market_chart(data, timestamp)
+
+    async def _coingecko_simple_token_price(
+        self, contract_address: str, platform: str, fallback_timestamp: datetime
+    ) -> Optional[TokenPrice]:
+        url = f"{COINGECKO_BASE}/simple/token_price/{platform}"
+        params = {
+            "contract_addresses": contract_address.lower(),
+            "vs_currencies": "usd",
+            "include_last_updated_at": "true",
+        }
+        data = await self._request_coingecko(url, params=params)
+        if not data:
+            return None
+        return self._parse_coingecko_simple_price(
+            data, contract_address.lower(), fallback_timestamp
+        )
+
+    async def _coingecko_simple_native_price(
+        self, platform: str, fallback_timestamp: datetime
+    ) -> Optional[TokenPrice]:
+        url = f"{COINGECKO_BASE}/simple/price"
+        params = {
+            "ids": platform,
+            "vs_currencies": "usd",
+            "include_last_updated_at": "true",
+        }
+        data = await self._request_coingecko(url, params=params)
+        if not data:
+            return None
+        return self._parse_coingecko_simple_price(data, platform, fallback_timestamp)
 
     @async_retry()
-    async def _request(self, url: str, params: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-        if not self.enabled:
-            if not self._disabled_logged:
-                LOGGER.info("CoinMarketCap queries disabled; skipping price request to %s", url)
-                self._disabled_logged = True
-            return {}
-        if not self.api_key:
-            if not self._missing_key_logged:
-                LOGGER.warning(
-                    "CoinMarketCap API key not configured; price requests will be skipped"
-                )
-                self._missing_key_logged = True
+    async def _request_coinmarketcap(
+        self, url: str, params: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        if not self._coinmarketcap_enabled:
+            if not self._coinmarketcap_disabled_logged:
+                if not self.api_key:
+                    LOGGER.warning(
+                        "CoinMarketCap API key not configured; provider will be skipped"
+                    )
+                else:
+                    LOGGER.info("CoinMarketCap provider disabled")
+                self._coinmarketcap_disabled_logged = True
             return {}
         session = await self._ensure_session()
         headers = {
@@ -140,74 +376,35 @@ class PriceService:
                 raise RuntimeError(f"Price error {resp.status}: {text}")
             return await resp.json()
 
-    async def _fetch_contract_price(
-        self, contract_address: str, timestamp: datetime
-    ) -> Optional[TokenPrice]:
-        token_id = await self._get_contract_token_id(contract_address)
-        if token_id is None:
-            return None
-        try:
-            return await self._fetch_price_for_id(token_id, timestamp)
-        except Exception as exc:  # pragma: no cover - runtime only
-            LOGGER.warning("Failed to fetch contract price %s: %s", contract_address, exc)
-            return None
-
-    async def _fetch_eth_price(self, timestamp: datetime) -> Optional[TokenPrice]:
-        try:
-            return await self._fetch_price_for_id(ETH_CMC_ID, timestamp)
-        except Exception as exc:  # pragma: no cover - runtime only
-            LOGGER.warning("Failed to fetch ETH price: %s", exc)
-            return None
-
-    async def _fetch_price_for_id(self, token_id: int, timestamp: datetime) -> Optional[TokenPrice]:
-        price = await self._fetch_historical_price({"id": str(token_id)}, timestamp)
-        if price:
-            return price
-        return await self._fetch_latest_price({"id": str(token_id)}, timestamp)
-
-    async def _fetch_historical_price(
-        self, base_params: Dict[str, str], timestamp: datetime
-    ) -> Optional[TokenPrice]:
-        dt = timestamp.astimezone(timezone.utc)
-        params = {
-            **base_params,
-            "time_start": (dt - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S"),
-            "time_end": (dt + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S"),
-            "interval": "hourly",
-            "convert": USD,
-            "count": "1",
-        }
-        url = f"{COINMARKETCAP_BASE}/v2/cryptocurrency/quotes/historical"
-        data = await self._request(url, params=params)
-        if not data:
-            return None
-        return self._parse_historical_price(data, timestamp)
-
-    async def _fetch_latest_price(
-        self, base_params: Dict[str, str], fallback_timestamp: datetime
-    ) -> Optional[TokenPrice]:
-        params = {**base_params, "convert": USD}
-        url = f"{COINMARKETCAP_BASE}/v2/cryptocurrency/quotes/latest"
-        data = await self._request(url, params=params)
-        if not data:
-            return None
-        return self._parse_latest_price(data, fallback_timestamp)
-
-    async def _get_contract_token_id(self, contract_address: str) -> Optional[int]:
-        normalized = contract_address.lower()
-        if normalized in self._contract_id_cache:
-            return self._contract_id_cache[normalized]
-        url = f"{COINMARKETCAP_BASE}/v2/cryptocurrency/info"
-        params = {"address": normalized}
-        try:
-            data = await self._request(url, params=params)
-        except Exception as exc:  # pragma: no cover - runtime only
-            LOGGER.warning("Failed to fetch metadata for %s: %s", contract_address, exc)
-            self._contract_id_cache[normalized] = None
-            return None
-        token_id = self._parse_contract_token_id(data, normalized)
-        self._contract_id_cache[normalized] = token_id
-        return token_id
+    @async_retry()
+    async def _request_coingecko(
+        self, url: str, params: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        if not self.enabled:
+            if not self._disabled_logged:
+                LOGGER.info("Price service disabled; skipping price request to %s", url)
+                self._disabled_logged = True
+            return {}
+        session = await self._ensure_session()
+        headers = {"Accepts": "application/json"}
+        async with session.get(url, params=params, headers=headers) as resp:
+            if resp.status >= 500:
+                raise RuntimeError(f"Price service error {resp.status}")
+            if resp.status == 429:
+                raise RuntimeError("Price rate limited")
+            if resp.status == 404:
+                text = await resp.text()
+                LOGGER.debug(
+                    "CoinGecko request not found for %s params=%s: %s",
+                    url,
+                    params,
+                    text.strip(),
+                )
+                return {}
+            if resp.status >= 400:
+                text = await resp.text()
+                raise RuntimeError(f"Price error {resp.status}: {text}")
+            return await resp.json()
 
     def _parse_contract_token_id(
         self, data: Dict[str, Any], normalized_address: str
@@ -362,3 +559,65 @@ class PriceService:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(timezone.utc)
+
+    def _parse_coingecko_market_chart(
+        self, data: Dict[str, Any], fallback_timestamp: datetime
+    ) -> Optional[TokenPrice]:
+        prices = data.get("prices") if isinstance(data, dict) else None
+        if not isinstance(prices, list):
+            return None
+        best: Optional[TokenPrice] = None
+        best_diff: float = float("inf")
+        for entry in prices:
+            if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+                continue
+            ts_raw, price_raw = entry[0], entry[1]
+            try:
+                price_value = float(price_raw)
+            except (TypeError, ValueError):
+                continue
+            ts_value: Optional[datetime]
+            try:
+                ts_value = datetime.fromtimestamp(float(ts_raw) / 1000.0, tz=timezone.utc)
+            except (TypeError, ValueError, OSError, OverflowError):
+                ts_value = None
+            timestamp = ts_value or fallback_timestamp
+            diff = abs((timestamp - fallback_timestamp).total_seconds())
+            if diff < best_diff:
+                best_diff = diff
+                best = TokenPrice(usd=price_value, timestamp=timestamp)
+        return best
+
+    def _parse_coingecko_simple_price(
+        self, data: Dict[str, Any], key: str, fallback_timestamp: datetime
+    ) -> Optional[TokenPrice]:
+        if not isinstance(data, dict):
+            return None
+        entry = data.get(key)
+        if not isinstance(entry, dict):
+            return None
+        price = entry.get("usd")
+        if price is None:
+            return None
+        try:
+            price_value = float(price)
+        except (TypeError, ValueError):
+            return None
+        ts_raw = entry.get("last_updated_at")
+        timestamp: Optional[datetime] = None
+        if isinstance(ts_raw, (int, float)):
+            try:
+                timestamp = datetime.fromtimestamp(float(ts_raw), tz=timezone.utc)
+            except (OSError, OverflowError, ValueError):
+                timestamp = None
+        elif isinstance(ts_raw, str) and ts_raw:
+            try:
+                timestamp = datetime.fromisoformat(ts_raw)
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+                timestamp = timestamp.astimezone(timezone.utc)
+            except ValueError:
+                timestamp = None
+        if timestamp is None:
+            timestamp = fallback_timestamp
+        return TokenPrice(usd=price_value, timestamp=timestamp)
