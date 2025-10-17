@@ -89,6 +89,15 @@ class PriceService:
                 raise RuntimeError(f"Price service error {resp.status}")
             if resp.status == 429:
                 raise RuntimeError("Price rate limited")
+            if resp.status == 404:
+                text = await resp.text()
+                LOGGER.debug(
+                    "Price request not found for %s params=%s: %s",
+                    url,
+                    params,
+                    text.strip(),
+                )
+                return {}
             if resp.status >= 400:
                 text = await resp.text()
                 raise RuntimeError(f"Price error {resp.status}: {text}")

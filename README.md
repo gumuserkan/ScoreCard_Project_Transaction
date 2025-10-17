@@ -43,35 +43,33 @@ pip install -e .
 3. Uygulamayı başlatın:
 
    ```bash
-   wallet-features \
-     --input data/wallets.xlsx \
-     --output out/wallet_features.csv \
-     --transactions-output out/wallet_transactions.xlsx \
-     --network eth-mainnet \
-     --concurrency 8
+  wallet-features \
+    --input data/wallets.xlsx \
+    --output out/wallet_features.csv \
+    --network eth-mainnet \
+    --concurrency 8
    ```
 
    Eğer paketi `pip install -e .` ile kurmadıysanız veya doğrudan kaynak koddan çalıştırmak istiyorsanız aynı komutu `python -m` ile çağırabilirsiniz:
 
    ```bash
-   python -m wallet_features.cli \
-     --input data/wallets.xlsx \
-     --output out/wallet_features.csv \
-     --transactions-output out/wallet_transactions.xlsx \
-     --network eth-mainnet \
-     --concurrency 8
+  python -m wallet_features.cli \
+    --input data/wallets.xlsx \
+    --output out/wallet_features.csv \
+    --network eth-mainnet \
+    --concurrency 8
    ```
 
    - `--input` parametresini sağlamazsanız ve proje kökünde `data/wallets.xlsx` mevcutsa otomatik olarak kullanılır.
    - `--wallets` ile virgülle ayrılmış adresler verebilirsiniz: `wallet-features --wallets addr1,addr2`.
    - Alchemy anahtarınızı CLI üzerinden `--alchemy-key` ile geçebilir veya `.env`/ortam değişkeni kullanabilirsiniz.
-   - `--transactions-output` parametresi her cüzdana ait ayrıntılı transfer listesini Excel olarak üretir (varsayılan `out/wallet_transactions.xlsx`).
+  - `--transactions-output` parametresi her cüzdana ait ayrıntılı transfer listesini Excel olarak üretir; verilmezse bu çıktı oluşturulmaz.
    - `--verbose` bayrağı ayrıntılı log üretir.
 
 4. Çalışma tamamlandığında CLI çıktısı:
 
    - Özet metrikler CSV olarak `--output` ile verdiğiniz konuma yazılır (varsayılan `wallet_features.csv`).
-   - Her cüzdanın son 250 transferine ait detaylar Excel dosyasına (`--transactions-output`).
+- Her cüzdanın son 250 transferine ait detaylar yalnızca `--transactions-output` parametresi sağlanırsa Excel dosyasına yazılır.
    - Başarısız olan cüzdanlar için hata mesajı `error` sütununda yer alır.
 
 ### Sample CSV Output

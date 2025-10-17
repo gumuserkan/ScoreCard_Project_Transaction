@@ -151,7 +151,7 @@ async def async_main(
     input_file: Optional[Path],
     wallets_list: Optional[str],
     output: Path,
-    transactions_output: Path,
+    transactions_output: Optional[Path],
     alchemy_key: str,
     network: str,
     concurrency: int,
@@ -181,15 +181,16 @@ async def async_main(
         for row in rows:
             writer.writerow({key: row.get(key, "") for key in HEADER})
     console.print(f"[green]Wrote features for {len(rows)} wallets to {output}[/green]")
-    transactions: Dict[str, List[TransferEvent]] = {
-        wallet: calculator.get_wallet_transactions(wallet)
-        for wallet in resolved_wallets
-        if wallet in results
-    }
-    export_transactions_to_excel(transactions, transactions_output)
-    console.print(
-        f"[green]Wrote transaction details for {len(transactions)} wallets to {transactions_output}[/green]"
-    )
+    if transactions_output:
+        transactions: Dict[str, List[TransferEvent]] = {
+            wallet: calculator.get_wallet_transactions(wallet)
+            for wallet in resolved_wallets
+            if wallet in results
+        }
+        export_transactions_to_excel(transactions, transactions_output)
+        console.print(
+            f"[green]Wrote transaction details for {len(transactions)} wallets to {transactions_output}[/green]"
+        )
 
 
 @app.command()
@@ -197,10 +198,10 @@ def main(
     input: Optional[Path] = typer.Option(None, "--input", help="Input file with wallet addresses"),
     wallets: Optional[str] = typer.Option(None, "--wallets", help="Comma separated wallet addresses"),
     output: Path = typer.Option(Path("wallet_features.csv"), "--output", help="Output CSV file"),
-    transactions_output: Path = typer.Option(
-        Path("out/wallet_transactions.xlsx"),
+    transactions_output: Optional[Path] = typer.Option(
+        None,
         "--transactions-output",
-        help="Output Excel file for detailed transactions",
+        help="Optional Excel file for detailed transactions",
     ),
     alchemy_key: Optional[str] = typer.Option(None, "--alchemy-key", help="Alchemy API key"),
     network: str = typer.Option("eth-mainnet", "--network", help="Alchemy network"),
