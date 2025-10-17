@@ -14,7 +14,7 @@ from rich.logging import RichHandler
 from wallet_features.clients.alchemy import AlchemyClient
 from wallet_features.features import FeatureCalculator, compute_wallets_features
 from wallet_features.pricing import PriceService
-from wallet_features.utils import getenv, is_wallet_address, load_wallets
+from wallet_features.utils import getenv, is_wallet_address, load_env_file, load_wallets
 
 app = typer.Typer(help="Extract Ethereum wallet features using Alchemy")
 console = Console()
@@ -113,13 +113,19 @@ def main(
     verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging"),
 ) -> None:
     configure_logging(verbose)
+    load_env_file()
     key = alchemy_key or getenv("ALCHEMY_API_KEY")
     if not key:
         raise typer.BadParameter("Alchemy API key must be provided via --alchemy-key or ALCHEMY_API_KEY env var")
+    input_path = input
+    if input_path is None:
+        default_excel = Path("data/wallets.xlsx")
+        if default_excel.exists():
+            input_path = default_excel
     try:
         asyncio.run(
             async_main(
-                input_file=input,
+                input_file=input_path,
                 wallets_list=wallets,
                 output=output,
                 alchemy_key=key,

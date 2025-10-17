@@ -60,19 +60,76 @@ def load_wallets(
     if input_path:
         if not input_path.exists():
             raise FileNotFoundError(f"Input file {input_path} not found")
-        if input_path.suffix.lower() == ".csv":
+        suffix = input_path.suffix.lower()
+        if suffix == ".csv":
             with input_path.open("r", newline="", encoding="utf-8") as fh:
                 reader = csv.reader(fh)
                 for row in reader:
                     if not row:
                         continue
                     wallets.add(normalize_wallet(row[0]))
+        elif suffix in {".xlsx", ".xlsm"}:
+            try:
+                from openpyxl import load_workbook
+            except ImportError as exc:  # pragma: no cover - missing optional dependency
+                raise ImportError(
+                    "Reading Excel files requires the optional dependency 'openpyxl'. "
+                    "Install it with `pip install openpyxl`."
+                ) from exc
+            workbook = load_workbook(filename=input_path, read_only=True, data_only=True)
+            try:
+                sheet = workbook.active
+                header: Optional[List[str]] = None
+                address_idx: Optional[int] = None
+                for row in sheet.iter_rows(values_only=True):
+                    if header is None:
+                        header = [str(cell).strip().lower() if cell is not None else "" for cell in row]
+                        try:
+                            address_idx = header.index("address")
+                        except ValueError as exc:
+                            raise ValueError(
+                                f"Excel file {input_path} must contain an 'address' column"
+                            ) from exc
+                        continue
+                    if address_idx is None or address_idx >= len(row):
+                        continue
+                    cell = row[address_idx]
+                    if cell is None:
+                        continue
+                    wallets.add(normalize_wallet(str(cell)))
+            finally:
+                workbook.close()
         else:
             with input_path.open("r", encoding="utf-8") as fh:
                 for line in fh:
                     if line.strip():
                         wallets.add(normalize_wallet(line))
     return sorted(wallets)
+
+
+def load_env_file(path: Optional[Path] = None) -> None:
+    """Load environment variables from a .env style file if present."""
+
+    target = path or Path(".env")
+    if not target.exists():
+        return
+    with target.open("r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            if not key:
+                continue
+            value = value.strip()
+            if (value.startswith('"') and value.endswith('"')) or (
+                value.startswith("'") and value.endswith("'")
+            ):
+                value = value[1:-1]
+            os.environ.setdefault(key, value)
 
 
 def utc_now() -> datetime:

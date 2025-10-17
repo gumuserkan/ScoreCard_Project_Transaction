@@ -4,7 +4,7 @@ An asynchronous, production-ready CLI for extracting Ethereum wallet transaction
 
 ## Features
 
-- Supports CSV/text input files or direct `--wallets` comma-separated lists
+- Supports CSV/text/Excel input files or direct `--wallets` comma-separated lists
 - ENS resolution, wallet validation, and graceful handling of invalid inputs
 - Concurrent asynchronous calls using `aiohttp` with retry/backoff
 - Aggregated transaction counts, volumes, gas fees, token categories, and transaction type inference
@@ -22,12 +22,35 @@ pip install -e .
 
 ## Usage
 
-Set your Alchemy API key in the environment or pass it via CLI.
+### Configuration
+
+1. Copy `.env.example` to `.env` and add your secrets:
+
+   ```bash
+   cp .env.example .env
+   echo "ALCHEMY_API_KEY=your_key_here" >> .env
+   ```
+
+   The CLI automatically loads the `.env` file on startup. Environment variables that are already set in the shell are not overridden.
+
+2. Create a `data/wallets.xlsx` file that contains the wallet addresses you want to process. The first row must include a column named `address`, and each subsequent row should include a wallet address beneath that header. Example:
+
+   | address                        |
+   | ----------------------------- |
+   | 0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae |
+   | vitalik.eth                    |
+
+3. (Optional) You can still provide CSV or newline-delimited text files if you prefer, or pass addresses directly with `--wallets`.
+
+### Usage
+
+Set your Alchemy API key in the environment or `.env` file, or pass it via CLI.
 
 ```bash
-export ALCHEMY_API_KEY=your_key_here
-wallet-features --input wallets.txt --output features.csv --network eth-mainnet --concurrency 8
+wallet-features --input data/wallets.xlsx --output features.csv --network eth-mainnet --concurrency 8
 ```
+
+If you omit `--input` and a `data/wallets.xlsx` file exists, it will be used automatically.
 
 Or pass wallets directly:
 
@@ -50,8 +73,9 @@ Wallet,Total Tx Count (1M),Total Tx Count (3M),Total Tx Count (6M),Total Tx Coun
 
 A convenience script for running the tool against two public Ethereum addresses is provided at `examples/sample_run.py`:
 
+The example script expects an API key via `.env` or the `ALCHEMY_API_KEY` environment variable:
+
 ```bash
-export ALCHEMY_API_KEY=your_key_here
 python examples/sample_run.py
 ```
 
